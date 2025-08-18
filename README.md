@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Framework-Hybrid%20AI-purple?style=for-the-badge&logo=github" alt="Framework Badge">
   <img src="https://img.shields.io/badge/Language-Python%20%26%20Lisp-blue?style=for-the-badge&logo=python" alt="Python & Lisp Badge">
   <img src="https://img.shields.io/badge/Paradigm-Neuro--Symbolic%20System-orange?style=for-the-badge&logo=tensorflow" alt="Neuro-Symbolic System Badge">
-  <img src="https://img.shields.io/github/stars/your-username/mozart?style=for-the-badge&color=gold" alt="Stars Badge">
+  <img src="https://img.shields.io/github/stars/Cotix-AI/mozart?style=for-the-badge&color=gold" alt="Stars Badge">
 </div>
 
 <br>
