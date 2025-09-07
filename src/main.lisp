@@ -1,0 +1,8 @@
+(load "mozart.lisp")
+(defmacro defrule (name &rest clauses)
+  `(push '(,name ,@clauses) *rules*))
+(defun main ()
+  (let ((initial-facts '((start-generation)))
+        (rules-file "rules.lisp"))
+    (generate-music initial-facts rules-file :temperature 0.7)))
+(main)
