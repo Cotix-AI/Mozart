@@ -23,6 +23,13 @@
   "检查一个fact是否存在于工作内存中"
   (member fact *working-memory* :test #'equal))
 
+(defun get-fact-value (fact-name)
+  "在工作内存中查找形如 (fact-name value) 的事实，并返回 value"
+  (let ((fact (find-if #'(lambda (f) (and (listp f) (eq (first f) fact-name)))
+                       *working-memory*)))
+    (when fact
+      (second fact))))
+
 
 ;;; =================================================================
 ;;; 2. 规则库 (Knowledge Base)
