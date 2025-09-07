@@ -152,42 +152,57 @@
 
 ;;; --- 3c. 规则执行与主循环 ---
 
-(defun apply-rule (rule)
-  "执行一个规则的 :then 部分的动作。"
-  (let ((actions (getf (cddr rule) :then)))
+(defun substitute-bindings (form bindings)
+  "将表达式中的变量替换为绑定的值"
+  (cond
+    ((assoc form bindings) (cdr (assoc form bindings)))
+    ((consp form) (cons (substitute-bindings (car form) bindings)
+                        (substitute-bindings (cdr form) bindings)))
+    (t form)))
+
+(defun apply-rule (rule-with-bindings)
+  "执行一个规则的 :then 部分，并应用绑定"
+  (let* ((rule (first rule-with-bindings))
+         (bindings (second rule-with-bindings))
+         (actions (getf (cddr rule) :then)))
     (format t "~&[FIRE] 触发规则: ~a" (second rule))
     (dolist (action actions)
-      (case (first action)
-        ('add-fact (add-fact (second action)))
-        ('remove-fact (remove-fact (second action)))
-        (t (format t "~&[WARN] 未知动作: ~a" action))))))
+      (let ((instantiated-action (substitute-bindings action bindings)))
+        (case (first instantiated-action)
+          ('add-fact (add-fact (second instantiated-action)))
+          ('remove-fact (remove-fact (second instantiated-action)))
+          (t (eval instantiated-action))))))) ; 支持执行任意Lisp代码
 
-(defun run-engine (&optional (max-cycles 100) (temperature 1.0))
-  "推理机主循环，使用温度采样选择下一个要触发的规则。"
+(defun run-engine (&optional (max-cycles 500) (temperature 1.0))
+  "推理机主循环"
   (loop for i from 1 to max-cycles
         when (fact-exists-p '(composition-finished))
-        do 
+        do
           (format t "~&[INFO] 发现 (composition-finished) 事实，推理结束。")
           (return)
-        do (let ((applicable-rules (find-applicable-rules)))
-             (if (null applicable-rules)
+        do (let ((applicable (find-applicable-rules)))
+             (if (null applicable)
                  (progn
                    (format t "~&[INFO] 没有可应用的规则了，推理结束。")
                    (return))
-                 (let* ((weights (mapcar #'(lambda (rule) (getf (cddr rule) :weight 1.0))
-                                         applicable-rules))
+                 (let* ((rules-only (mapcar #'first applicable))
+                        (weights (mapcar #'(lambda (r) (getf (cddr r) :weight 1.0))
+                                         rules-only))
                         (probabilities (softmax weights temperature))
-                        (rule-to-fire (sample-from-distribution applicable-rules probabilities)))
+                        (rule-to-fire (sample-from-distribution applicable probabilities)))
                    
-                   (when (> (length applicable-rules) 1)
-                     (format t "~&[SAMPLE] 竞争规则: ~a, 权重: ~a, 概率: ~a"
-                             (mapcar #'second applicable-rules)
-                             weights
-                             (mapcar #'(lambda (p) (format nil "~,2f" p)) probabilities)))
+                   ;; 从 'applicable' 中找到与选中的 'rule-to-fire' 对应的 (rule bindings) 对
+                   (let ((rule-with-bindings-to-fire 
+                          (find-if #'(lambda (rb) (eq (first rb) rule-to-fire)) applicable)))
 
-                   (apply-rule rule-to-fire))))
+                     (when (> (length applicable) 1)
+                       (format t "~&[SAMPLE] 竞争规则: ~a, 权重: ~a, 概率: ~a"
+                               (mapcar #'(lambda (r) (second r)) rules-only)
+                               weights
+                               (mapcar #'(lambda (p) (format nil "~,2f" p)) probabilities)))
+
+                     (apply-rule rule-with-bindings-to-fire))))
         finally (format t "~&[WARN] 达到最大循环次数 ~d，推理强制结束。" max-cycles)))
-
 
 ;;; =================================================================
 ;;; 4. 主流程函数
