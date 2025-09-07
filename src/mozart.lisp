@@ -44,20 +44,81 @@
 
 ;;; --- 3a. 规则匹配 ---
 
-(defun condition-matches-p (condition)
-  "检查单个条件是否满足, 支持 (not <fact>) 形式"
-  (if (and (listp condition) (eq (first condition) 'not))
-      (not (fact-exists-p (second condition)))
-      (fact-exists-p condition)))
+(defun get-fact-value (fact-name)
+  "在工作内存中查找形如 (fact-name value) 的事实，并返回 value"
+  (let ((fact (find-if #'(lambda (f) (and (listp f) (eq (first f) fact-name)))
+                       *working-memory*)))
+    (when fact
+      (second fact))))
+
+(defun variable-p (x)
+  "检查一个符号是否是变量 (以 ? 开头)"
+  (and (symbolp x) (char= (char (symbol-name x) 0) #\?)))
+
+(defun match-p (pattern fact bindings)
+  "将一个模式与一个事实进行匹配，返回更新后的绑定列表或 NIL"
+  (cond
+    ((eql pattern fact) (values bindings t)) ; 完全相等
+    ((assoc pattern bindings) (if (equal (cdr (assoc pattern bindings)) fact) (values bindings t) (values nil nil))) ; 变量已绑定
+    ((variable-p pattern) (values (acons pattern fact bindings) t)) ; 变量未绑定
+    ((and (consp pattern) (consp fact)) ; 递归匹配列表
+     (multiple-value-bind (new-bindings success)
+         (match-p (car pattern) (car fact) bindings)
+       (if success
+           (match-p (cdr pattern) (cdr fact) new-bindings)
+           (values nil nil))))
+    (t (values nil nil)))) ; 不匹配
+
+(defun condition-matches-p (condition bindings)
+  "检查单个条件是否满足，返回更新后的绑定列表或 NIL"
+  (cond
+    ;; 处理 (not <pattern>)
+    ((and (listp condition) (eq (first condition) 'not))
+     (if (find-if #'(lambda (fact) (nth-value 1 (match-p (second condition) fact bindings))) *working-memory*)
+         (values nil nil) ; 如果能找到匹配的，则 (not) 失败
+         (values bindings t))) ; 找不到匹配的，则 (not) 成功
+
+    ;; 处理 Lisp 表达式
+    ((and (listp condition) (not (variable-p (first condition))))
+     (if (eval condition) ; 直接求值
+         (values bindings t)
+         (values nil nil)))
+
+    ;; 处理普通模式匹配
+    (t
+     (let ((found-match nil))
+       (dolist (fact *working-memory*)
+         (multiple-value-bind (new-bindings success)
+             (match-p condition fact bindings)
+           (when success
+             (setf found-match t)
+             (setf bindings new-bindings) ; 更新绑定
+             (return))))
+       (if found-match
+           (values bindings t)
+           (values nil nil))))))
 
 (defun rule-conditions-met-p (rule)
-  "检查一个规则的所有 :if 条件是否都满足"
+  "检查一个规则的所有 :if 条件是否都满足，返回最终的绑定列表或 NIL"
   (let ((conditions (getf (cddr rule) :if)))
-    (every #'condition-matches-p conditions)))
+    (let ((final-bindings '()))
+      (if (every #'(lambda (cond)
+                     (multiple-value-bind (new-bindings success)
+                         (condition-matches-p cond final-bindings)
+                       (when success (setf final-bindings new-bindings))
+                       success))
+                 conditions)
+          final-bindings ; 如果所有条件都满足，返回最终的绑定
+          nil))))
 
 (defun find-applicable-rules ()
-  "找到当前工作内存状态下所有可以被触发的规则"
-  (remove-if-not #'rule-conditions-met-p *rules*))
+  "找到所有可触发的规则及其绑定"
+  (let ((applicable-rules-with-bindings '()))
+    (dolist (rule *rules*)
+      (let ((bindings (rule-conditions-met-p rule)))
+        (when bindings
+          (push (list rule bindings) applicable-rules-with-bindings))))
+    applicable-rules-with-bindings))
 
 ;;; --- 3b. Softmax 和带权采样辅助函数 ---
 
