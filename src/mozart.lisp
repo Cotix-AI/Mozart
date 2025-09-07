@@ -1,3 +1,4 @@
+;; 文件名: mozart.lisp (最终修正版)
 (in-package :cl-user)
 
 ;;; =================================================================
@@ -23,13 +24,6 @@
   "检查一个fact是否存在于工作内存中"
   (member fact *working-memory* :test #'equal))
 
-(defun get-fact-value (fact-name)
-  "在工作内存中查找形如 (fact-name value) 的事实，并返回 value"
-  (let ((fact (find-if #'(lambda (f) (and (listp f) (eq (first f) fact-name)))
-                       *working-memory*)))
-    (when fact
-      (second fact))))
-
 
 ;;; =================================================================
 ;;; 2. 规则库 (Knowledge Base)
@@ -42,7 +36,7 @@
 ;;; 3. 推理机 (Inference Engine) - 包含温度采样逻辑
 ;;; =================================================================
 
-;;; --- 3a. 规则匹配 ---
+;;; --- 3a. 规则匹配 (升级版，支持变量和表达式) ---
 
 (defun get-fact-value (fact-name)
   "在工作内存中查找形如 (fact-name value) 的事实，并返回 value"
@@ -67,7 +61,7 @@
        (if success
            (match-p (cdr pattern) (cdr fact) new-bindings)
            (values nil nil))))
-    (t (values nil nil)))) ; 不匹配
+    (t (values nil nil))))
 
 (defun condition-matches-p (condition bindings)
   "检查单个条件是否满足，返回更新后的绑定列表或 NIL"
@@ -171,7 +165,7 @@
         (case (first instantiated-action)
           ('add-fact (add-fact (second instantiated-action)))
           ('remove-fact (remove-fact (second instantiated-action)))
-          (t (eval instantiated-action))))))) ; 支持执行任意Lisp代码
+          (t (eval instantiated-action)))))))
 
 (defun run-engine (&optional (max-cycles 500) (temperature 1.0))
   "推理机主循环"
@@ -190,9 +184,9 @@
                                          rules-only))
                         (probabilities (softmax weights temperature))
                         (rule-to-fire (sample-from-distribution applicable probabilities)))
-                   
+
                    ;; 从 'applicable' 中找到与选中的 'rule-to-fire' 对应的 (rule bindings) 对
-                   (let ((rule-with-bindings-to-fire 
+                   (let ((rule-with-bindings-to-fire
                           (find-if #'(lambda (rb) (eq (first rb) rule-to-fire)) applicable)))
 
                      (when (> (length applicable) 1)
@@ -201,8 +195,9 @@
                                weights
                                (mapcar #'(lambda (p) (format nil "~,2f" p)) probabilities)))
 
-                     (apply-rule rule-with-bindings-to-fire))))
+                     (apply-rule rule-with-bindings-to-fire))))))
         finally (format t "~&[WARN] 达到最大循环次数 ~d，推理强制结束。" max-cycles)))
+
 
 ;;; =================================================================
 ;;; 4. 主流程函数
@@ -220,18 +215,18 @@
       (unless (probe-file full-path)
         (error "规则文件不存在: ~a" full-path))
       (load full-path))
-  
+
   (format t "~&[INFO] 从 ~a 加载了 ~d 条规则。" rules-file (length *rules*))
   (format t "~&[INFO] 使用温度: ~a" temperature)
 
   (dolist (fact initial-facts)
     (add-fact fact))
   (format t "~&[INFO] 初始事实: ~a" *working-memory*)
-  
+
   (format t "~&~%--- 开始音乐生成 ---~%")
   (run-engine cycles temperature)
   (format t "~&--- 生成结束 ---~%~%")
-  
+
   (let ((notes (sort (get-generated-notes) #'< :key #'second)))
     (format t "生成的音乐序列: ~%")
     (dolist (note notes)
